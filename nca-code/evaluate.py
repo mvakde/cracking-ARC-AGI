@@ -9,6 +9,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import ListedColormap, BoundaryNorm
 import argparse
 import numpy as np
+import glob
 
 # from google.colab import drive
 # drive.mount('/content/drive')
@@ -65,6 +66,99 @@ def calculate_union_accuracy(pred_grid, true_grid, pad_value=-1):
                     matched_pixels += 1
 
     return matched_pixels, total_union_pixels
+
+def visualise_training_progression(
+    all_checkpoint_predictions: dict,
+    task_ids: list,
+    challenges_dict: dict,
+    solutions_dict: dict,
+    output_dir_path: str,
+    final_submission_path: str
+):
+    """
+    Generates a combined PDF visualizing the model's predictions over training iterations,
+    including intermediate checkpoints and the final submission.
+    """
+    print("\nStarting combined visualization for all submission files...")
+    
+    intermediate_submissions_dir = os.path.join(output_dir_path, "intermediate_submissions")
+    os.makedirs(intermediate_submissions_dir, exist_ok=True)
+    
+    submission_timeline = []
+    if all_checkpoint_predictions:
+        for task_idx, task_id in enumerate(task_ids):
+            if task_id in all_checkpoint_predictions:
+                for iter_num, preds in all_checkpoint_predictions[task_id].items():
+                    submission_timeline.append({'task_idx': task_idx, 'task_id': task_id, 'iter': iter_num, 'predictions': preds})
+        
+        submission_timeline.sort(key=lambda x: (x['task_idx'], x['iter']))
+        
+        temp_submission = {}
+        for event in submission_timeline:
+            temp_submission[event['task_id']] = event['predictions']
+            
+            for tid in task_ids:
+                if tid not in temp_submission:
+                     if tid in challenges_dict and 'test' in challenges_dict[tid]:
+                         num_test_cases = len(challenges_dict[tid]['test'])
+                         default_preds = [{"attempt_1": [[0]], "attempt_2": [[0]]} for _ in range(num_test_cases)]
+                         temp_submission[tid] = default_preds
+
+            filename = f"submission_task{event['task_idx']}_{event['task_id']}_iter{event['iter']:04d}.json"
+            filepath = os.path.join(intermediate_submissions_dir, filename)
+            with open(filepath, 'w') as f:
+                json.dump(temp_submission, f, indent=4)
+
+    all_results = []
+    
+    submission_files = sorted(glob.glob(os.path.join(intermediate_submissions_dir, "*.json")))
+    if os.path.exists(final_submission_path):
+        submission_files.append(final_submission_path)
+
+    if not submission_files:
+        print("  No submission files found to visualize.")
+        return
+
+    pdf_path = os.path.join(output_dir_path, "visualization_all.pdf")
+    combined_pdf = PdfPages(pdf_path)
+    
+    try:
+        for sub_file_path in submission_files:
+            submission_name = os.path.basename(sub_file_path)
+            print(f"  Visualizing {submission_name}...")
+            with open(sub_file_path, 'r') as f:
+                submission_dict_ind = json.load(f)
+
+            results_filename = f"results_{submission_name.replace('.json', '.md')}"
+            pdf_title = f"Results for: {submission_name}"
+            
+            result = evaluate_submission(
+                submission_dict=submission_dict_ind,
+                solutions_dict=solutions_dict,
+                challenges_dict=challenges_dict,
+                output_dir_path=output_dir_path,
+                visualize=True,
+                pdf_object=combined_pdf,
+                results_filename=results_filename,
+                pdf_title=pdf_title
+            )
+            result['submission_file'] = submission_name
+            all_results.append(result)
+
+        combined_pdf.close()
+        print(f"\nCombined visualization saved to {pdf_path}")
+
+        summary_path = os.path.join(output_dir_path, "results_all_summary.md")
+        with open(summary_path, 'w') as f:
+            f.write("# Overall Training Progression\n\n")
+            f.write("| Submission File | Overall Union Pixel Accuracy | Fully Correct Tasks |\n")
+            f.write("|:---|:---:|:---:|\n")
+            for res in all_results:
+                f.write(f"| {res['submission_file']} | {res['overall_pixel_accuracy']:.4f} | {res['num_fully_correct_tasks']} |\n")
+        print(f"Overall summary saved to {summary_path}")
+
+    except Exception as e:
+        print(f"  An error occurred during training progression visualization: {e}")
 
 def evaluate_submission(
     submission_dict: dict,

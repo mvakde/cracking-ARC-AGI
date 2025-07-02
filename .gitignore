@@ -3,8 +3,6 @@ venv/
 nca-code/runs
 nca-code/archived/
 .cursor
-gpu_prl_nca.py
 .cursorignore
-nca-code/invariance-v1
-nca-code/ka-v1
-nca-code/3d-v1
+hidden/
+nca-code/__pycache__/
