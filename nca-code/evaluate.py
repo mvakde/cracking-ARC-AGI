@@ -73,7 +73,8 @@ def visualise_training_progression(
     challenges_dict: dict,
     solutions_dict: dict,
     output_dir_path: str,
-    final_submission_path: str
+    final_submission_path: str,
+    visualize_train_pairs: bool = False
 ):
     """
     Generates a combined PDF visualizing the model's predictions over training iterations,
@@ -138,6 +139,7 @@ def visualise_training_progression(
                 challenges_dict=challenges_dict,
                 output_dir_path=output_dir_path,
                 visualize=True,
+                visualize_train_pairs=visualize_train_pairs,
                 pdf_object=combined_pdf,
                 results_filename=results_filename,
                 pdf_title=pdf_title
@@ -166,6 +168,7 @@ def evaluate_submission(
     challenges_dict: dict,
     output_dir_path: str,
     visualize: bool = False,
+    visualize_train_pairs: bool = False,
     pdf_object: PdfPages = None,
     results_filename: str = "results.md",
     pdf_title: str = None
@@ -191,6 +194,8 @@ def evaluate_submission(
         - both predicted attempts
         - the ground truth grid
         Padded regions will be shown in grey for shape mismatches.
+    visualize_train_pairs : bool, optional (default=False)
+        If True, and `visualize` is also True, training pairs (input/output) will also be plotted in the PDF.
     pdf_object : PdfPages, optional
         An existing PdfPages object to write visualization to. If None, a new PDF is created.
     results_filename : str, optional
@@ -362,6 +367,56 @@ def evaluate_submission(
 
         # Loop through sorted tasks to generate visualization pages
         for task_id in sorted_task_ids:
+            challenge_entry = challenges_dict.get(task_id, {})
+
+            # --- Visualize Training Pairs ---
+            if visualize_train_pairs and challenge_entry:
+                train_pairs = challenge_entry.get("train", [])
+                for train_idx, pair in enumerate(train_pairs):
+                    inp = pair.get("input", [])
+                    out = pair.get("output", [])
+
+                    inp_h = len(inp)
+                    inp_w = len(inp[0]) if inp_h > 0 else 0
+                    out_h = len(out)
+                    out_w = len(out[0]) if out_h > 0 else 0
+
+                    common_h = max(inp_h, out_h)
+                    common_w = max(inp_w, out_w)
+
+                    inp_p = _pad_grid(inp, common_h, common_w)
+                    out_p = _pad_grid(out, common_h, common_w)
+
+                    fig, axes = plt.subplots(1, 2, figsize=(6, 3.2))
+                    titles = ["Train Input", "Train Output"]
+                    grids_to_plot = [inp_p, out_p]
+
+                    for ax, title, grid_to_plot in zip(axes, titles, grids_to_plot):
+                        if not grid_to_plot or not grid_to_plot[0]:
+                            ax.set_title(title)
+                            ax.set_xticks([])
+                            ax.set_yticks([])
+                            continue
+
+                        shifted = [[cell + 1 for cell in row] for row in grid_to_plot]
+                        data = np.array(shifted, dtype=np.int8)
+
+                        ax.imshow(data, cmap=cmap, norm=norm, interpolation='nearest')
+                        rows, cols = data.shape
+                        ax.set_xticks(np.arange(-.5, cols, 1), minor=True)
+                        ax.set_yticks(np.arange(-.5, rows, 1), minor=True)
+                        ax.grid(which='minor', color='black', linestyle='-', linewidth=0.5)
+                        ax.tick_params(which='minor', size=0)
+                        ax.set_xticks([])
+                        ax.set_yticks([])
+                        ax.set_title(title)
+                    
+                    plt.suptitle(f"Task {task_id} | Train Pair #{train_idx+1}", fontsize=10)
+                    plt.tight_layout(rect=[0, 0, 1, 0.95])
+                    pdf.savefig(fig)
+                    plt.close(fig)
+
+            # --- Visualize Test Cases ---
             # (a) Extract ground‐truths & preds
             sol_list = solutions_dict[task_id]
             ground_truths = []
@@ -374,7 +429,6 @@ def evaluate_submission(
             pred_list = submission_dict[task_id]
 
             # (b) Extract test inputs
-            challenge_entry = challenges_dict.get(task_id, {})
             test_items      = challenge_entry.get("test", [])
             test_inputs     = []
             for test_item in test_items:

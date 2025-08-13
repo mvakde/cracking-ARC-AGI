@@ -18,15 +18,13 @@ timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S") # Format: YYMMDD_H
 # Uncomment for local mac silicon run
 ARC_DATA_DIR = "../../dataset/script-tests/grouped-tasks-0-4x"
 OUTPUT_DIR = os.path.join("../runs", f"test_{timestamp}")
-
-# Add VISUALISE option for single-threaded NCAs
-VISUALISE = True # Set to True to generate visualization.pdf at the end of execution
+VISUALISE = True # Set to True to generate visualization.pdf at the end of execution. Only for single-threaded NCA.
 EVALUATE_SCRIPT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "evaluate.py"))
 
 # Uncomment for Kaggle
 # ARC_DATA_DIR = "/kaggle/input/arc-prize-2024"
 # OUTPUT_DIR = "/kaggle/working"
-# VISUALISE = True   # Set to True to generate visualization.pdf at the end of execution
+# VISUALISE = True   # Set to True to generate visualization.pdf at the end of execution. Only for single-threaded NCA.
 # EVALUATE_SCRIPT_PATH = "/kaggle/working/evaluate.py"
 
 # Uncomment for Google Colab run
@@ -34,7 +32,7 @@ EVALUATE_SCRIPT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "
 # drive.mount('/content/drive')
 # ARC_DATA_DIR = "/content/drive/MyDrive/Cracking-ARC-AGI/dataset/script-tests/grouped-tasks"
 # OUTPUT_DIR = os.path.join("/content/drive/MyDrive/Cracking-ARC-AGI/NCAs", f"test_{timestamp}")
-# VISUALISE = True   # Set to True to generate visualization.pdf at the end of execution
+# VISUALISE = True   # Set to True to generate visualization.pdf at the end of execution. Only for single-threaded NCA.
 # EVALUATE_SCRIPT_PATH = "/content/drive/MyDrive/Cracking-ARC-AGI/evaluate.py"
 
 INPUT_JSON_FILE = os.path.join(ARC_DATA_DIR, "challenges.json")
