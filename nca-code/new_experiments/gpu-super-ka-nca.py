@@ -369,23 +369,23 @@ if __name__ == "__main__":
 
     # --- PLATFORM CONFIGURATION: UNCOMMENT THE BLOCK FOR YOUR CURRENT ENVIRONMENT ---
 
-    # --- 1. KAGGLE CONFIG ---
-    PLATFORM_NAME = "Kaggle"
-    ARC_DATA_DIR = "/kaggle/input/arc-prize-2024"
-    INPUT_JSON_FILENAME = "challenges.json"
-    OUTPUT_DIR = "/kaggle/working/"
-    WORKERS_PER_GPU = 1
-    LOCAL_WORKERS = 4
-    MAX_GROUP_SIZE = 20 # Split groups larger than this for better load balancing
-
-    # # --- 2. GOOGLE COLAB CONFIG ---
-    # PLATFORM_NAME = "Google Colab"
-    # ARC_DATA_DIR = "/content"
+    # # --- 1. KAGGLE CONFIG ---
+    # PLATFORM_NAME = "Kaggle"
+    # ARC_DATA_DIR = "/kaggle/input/arc-prize-2024"
     # INPUT_JSON_FILENAME = "challenges.json"
-    # OUTPUT_DIR = os.path.join("/content", f"gpu_super_ka_{datetime.datetime.now().strftime('%y%m%d_%H%M%S')}")
-    # WORKERS_PER_GPU = 2
-    # LOCAL_WORKERS = 2
+    # OUTPUT_DIR = "/kaggle/working/"
+    # WORKERS_PER_GPU = 1
+    # LOCAL_WORKERS = 4
     # MAX_GROUP_SIZE = 20 # Split groups larger than this for better load balancing
+
+    # --- 2. GOOGLE COLAB CONFIG ---
+    PLATFORM_NAME = "Google Colab"
+    ARC_DATA_DIR = "/content"
+    INPUT_JSON_FILENAME = "challenges.json"
+    OUTPUT_DIR = os.path.join("/content", f"gpu_super_ka_{datetime.datetime.now().strftime('%y%m%d_%H%M%S')}")
+    WORKERS_PER_GPU = 6
+    LOCAL_WORKERS = 6
+    MAX_GROUP_SIZE = 20 # Split groups larger than this for better load balancing
 
     # # --- 3. LOCAL MAC/PC CONFIG ---
     # PLATFORM_NAME = "Local Mac/PC"
@@ -410,7 +410,7 @@ if __name__ == "__main__":
         "hidden_per_task": 16,
         "lr": 1e-3,
         "weight_decay": 1e-4,
-        "num_iterations": 1000,
+        "num_iterations": 3000,
         "train_steps": 30,
         "prediction_steps": 30,
         "max_norm": 1.0,
