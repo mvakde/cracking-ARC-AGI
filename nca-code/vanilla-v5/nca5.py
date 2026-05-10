@@ -10,16 +10,19 @@ import torch.nn.functional as F
 import torch.optim as optim
 from typing import List, Dict, Any, Tuple
 import sys
-
+import subprocess
 import datetime
-timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S") # Format: YYMMDD_HHMMSS
+
+timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S")  # Format: YYMMDD_HHMMSS
 
 # --- 1. SETTINGS & PATHS ---
 # Uncomment for local mac silicon run
-ARC_DATA_DIR = "../../dataset/script-tests/grouped-tasks-0-4x"
+ARC_DATA_DIR = "../../dataset/script-tests/grouped-tasks-0dfd9992"
 OUTPUT_DIR = os.path.join("../runs", f"test_{timestamp}")
-VISUALISE = True # Set to True to generate visualization.pdf at the end of execution. Only for single-threaded NCA.
-EVALUATE_SCRIPT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "evaluate.py"))
+VISUALISE = True  # Set to True to generate visualization.pdf at the end of execution. Only for single-threaded NCA.
+EVALUATE_SCRIPT_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "evaluate.py")
+)
 
 # Uncomment for Kaggle
 # ARC_DATA_DIR = "/kaggle/input/arc-prize-2024"
@@ -47,29 +50,30 @@ os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 HPARAMS: Dict[str, Any] = {
     "grid_size": 30,
     "n_classes": 11,
-    "in_channels": 20, # 11 for color one-hot, 9 for hidden state
+    "in_channels": 20,  # 11 for color one-hot, 9 for hidden state
     "hidden_channels": 9,
     "nn_hidden_dim": 128,
     "lr": 1e-3,
     "weight_decay": 1e-4,
-    "num_iterations": 400,
+    "num_iterations": 1000,
     "prediction_steps": 30,
     "train_steps_min": 30,
     "train_steps_max": 30,
-    "max_norm": 1.0
+    "max_norm": 1.0,
 }
 
 # --- 2. The CellularNN Model ---
+
 
 class CellularNN(nn.Module):
     def __init__(self, in_channels: int, n_classes: int, nn_hidden_dim: int):
         super().__init__()
         self.n_classes = n_classes
         self.in_channels = in_channels
-        
+
         # For a 3x3 neighborhood, there are 8 neighbors.
-        perception_channels = self.in_channels + (8 * self.in_channels) 
-        
+        perception_channels = self.in_channels + (8 * self.in_channels)
+
         self.fc1 = nn.Conv2d(perception_channels, nn_hidden_dim, 1)
         self.fc2 = nn.Conv2d(nn_hidden_dim, self.in_channels, 1)
         self._initialize_weights()
@@ -85,7 +89,7 @@ class CellularNN(nn.Module):
         Alternative implementation to get neighbor states using padding and slicing,
         aiming to avoid F.unfold and its potential MPS fallback for 'col2im'.
         """
-        padded_state = F.pad(x, (1, 1, 1, 1), mode='constant', value=0.0)
+        padded_state = F.pad(x, (1, 1, 1, 1), mode="constant", value=0.0)
         B, C_state, H, W = x.shape
 
         neighbor_tensors = []
@@ -101,12 +105,13 @@ class CellularNN(nn.Module):
                 start_col = c_offset + 1
                 end_col = start_col + W
 
-                neighbor_slice = padded_state[:, :, start_row:end_row, start_col:end_col]
+                neighbor_slice = padded_state[
+                    :, :, start_row:end_row, start_col:end_col
+                ]
                 neighbor_tensors.append(neighbor_slice)
 
         all_neighbors = torch.cat(neighbor_tensors, dim=1)
         return all_neighbors
-
 
     def perceive(self, x: torch.Tensor) -> torch.Tensor:
         neighbor_channels = self.get_neighbor_states(x)
@@ -119,7 +124,9 @@ class CellularNN(nn.Module):
         new_state = x + dx
         return new_state
 
+
 # --- 3. Helper Functions ---
+
 
 def create_array_from_grid(
     small_grid: List[List[int]], grid_size: int, in_channels: int, n_classes: int
@@ -142,6 +149,7 @@ def create_array_from_grid(
                 arr[i, j, pixel_val + 1] = 1.0
     return arr
 
+
 def tensor_to_grid(state_tensor: torch.Tensor, n_classes: int) -> List[List[int]]:
     """Converts a single predicted state tensor [C, H, W] to a List[List[int]] grid."""
     pred_indices = state_tensor.cpu()[:n_classes, :, :].argmax(dim=0).numpy()
@@ -150,6 +158,7 @@ def tensor_to_grid(state_tensor: torch.Tensor, n_classes: int) -> List[List[int]
     # Replace -1 (from channel 0) with 0.
     # return [[max(0, cell) for cell in row] for row in grid]
     return grid
+
 
 def depad_grid(grid: List[List[int]], padding_value: int = -1) -> List[List[int]]:
     """Removes padding from a grid by finding the smallest bounding box containing non-padding values."""
@@ -170,20 +179,22 @@ def depad_grid(grid: List[List[int]], padding_value: int = -1) -> List[List[int]
                 min_c = min(min_c, c_idx)
                 max_c = max(max_c, c_idx)
                 found_non_padding = True
-    
+
     if not found_non_padding:
         return [[padding_value]]
 
     return [row[min_c : max_c + 1] for row in grid[min_r : max_r + 1]]
 
+
 # --- 4. The "Workhorse" Function ---
 
+
 def train_and_predict_for_task(
-    task_id: str, 
-    train_pairs: List[Dict], 
-    test_inputs: List[Dict], 
-    device: torch.device, 
-    hparams: Dict[str, Any]
+    task_id: str,
+    train_pairs: List[Dict],
+    test_inputs: List[Dict],
+    device: torch.device,
+    hparams: Dict[str, Any],
 ) -> List[List[int]]:
     """
     Initializes, trains, and uses an NCA model for a single task.
@@ -191,26 +202,26 @@ def train_and_predict_for_task(
     """
     # 1. Model & Optimizer Initialization
     model = CellularNN(
-        hparams['in_channels'], hparams['n_classes'], hparams['nn_hidden_dim']
+        hparams["in_channels"], hparams["n_classes"], hparams["nn_hidden_dim"]
     ).to(device)
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=hparams['lr'], weight_decay=hparams['weight_decay']
+        model.parameters(), lr=hparams["lr"], weight_decay=hparams["weight_decay"]
     )
 
     # 2. Data Preparation (No DataLoader)
-    grid_args = (hparams['grid_size'], hparams['in_channels'], hparams['n_classes'])
+    grid_args = (hparams["grid_size"], hparams["in_channels"], hparams["n_classes"])
     train_input_tensors = [
-        torch.tensor(create_array_from_grid(p['input'], *grid_args)).permute(2, 0, 1) 
+        torch.tensor(create_array_from_grid(p["input"], *grid_args)).permute(2, 0, 1)
         for p in train_pairs
     ]
     train_target_tensors = [
-        torch.tensor(create_array_from_grid(p['output'], *grid_args)).permute(2, 0, 1)
+        torch.tensor(create_array_from_grid(p["output"], *grid_args)).permute(2, 0, 1)
         for p in train_pairs
     ]
 
     # 3. Training Loop
     model.train()
-    for i in range(hparams['num_iterations']):
+    for i in range(hparams["num_iterations"]):
         inp_batch = torch.stack(train_input_tensors).to(device)
         target_batch = torch.stack(train_target_tensors).to(device)
 
@@ -218,20 +229,22 @@ def train_and_predict_for_task(
 
         # NCA update steps
         state = inp_batch
-        num_steps = np.random.randint(hparams['train_steps_min'], hparams['train_steps_max'] + 1)
+        num_steps = np.random.randint(
+            hparams["train_steps_min"], hparams["train_steps_max"] + 1
+        )
         for _ in range(num_steps):
             state = model(state)
-        
+
         # Loss calculation: MSE on all channels, with target being one-hot encoded.
         loss = F.mse_loss(state, target_batch)
-        
+
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), hparams['max_norm'])
+        torch.nn.utils.clip_grad_norm_(model.parameters(), hparams["max_norm"])
         optimizer.step()
 
         if i % 200 == 0:
             print(f"  Task {task_id}, Iter {i:04d}: Loss={loss.item():.4f}")
-            
+
     # 4. Save Final Checkpoint
     final_checkpoint_path = os.path.join(CHECKPOINT_DIR, f"{task_id}.pth")
     torch.save(model.state_dict(), final_checkpoint_path)
@@ -242,39 +255,50 @@ def train_and_predict_for_task(
     predicted_grids = []
     with torch.no_grad():
         for test_case in test_inputs:
-            test_input_grid = test_case['input']
+            test_input_grid = test_case["input"]
             inp_array = create_array_from_grid(test_input_grid, *grid_args)
-            inp_tensor = torch.tensor(inp_array).permute(2, 0, 1).unsqueeze(0).to(device)
-            
+            inp_tensor = (
+                torch.tensor(inp_array).permute(2, 0, 1).unsqueeze(0).to(device)
+            )
+
             state = inp_tensor
-            for _ in range(hparams['prediction_steps']):
+            for _ in range(hparams["prediction_steps"]):
                 state = model(state)
 
-            grid_from_tensor = tensor_to_grid(state.squeeze(0), hparams['n_classes'])
+            grid_from_tensor = tensor_to_grid(state.squeeze(0), hparams["n_classes"])
             depadded_grid = depad_grid(grid_from_tensor)
-            final_output_grid = [[max(0, cell) for cell in row] for row in depadded_grid] # Convert any remaining internal -1s to 0 (black)
+            final_output_grid = [
+                [max(0, cell) for cell in row] for row in depadded_grid
+            ]  # Convert any remaining internal -1s to 0 (black)
             predicted_grids.append(final_output_grid)
 
     return predicted_grids
+
 
 # --- 5. Main Execution Block ---
 
 if __name__ == "__main__":
     script_start_time = time.time()
-    
+
     # Setup
-    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     print(f"Using device: {device}")
 
     # Load data
     try:
-        with open(INPUT_JSON_FILE, 'r') as f:
+        with open(INPUT_JSON_FILE, "r") as f:
             challenges = json.load(f)
     except FileNotFoundError:
         print(f"FATAL: Input JSON not found at {INPUT_JSON_FILE}")
         print("Please check the `ARC_DATA_DIR` and `INPUT_JSON_FILE` variables.")
         exit()
-    
+
     submission = {}
 
     # Main processing loop
@@ -283,12 +307,12 @@ if __name__ == "__main__":
 
     for i, task_id in enumerate(task_ids):
         task_data = challenges[task_id]
-        print(f"\n--- Processing task {i+1}/{len(task_ids)}: {task_id} ---")
+        print(f"\n--- Processing task {i + 1}/{len(task_ids)}: {task_id} ---")
 
-        train_pairs = task_data['train']
+        train_pairs = task_data["train"]
         # The 'test' field in training files are pairs, but in test files are just inputs.
         # We handle this by only looking at the 'input' key.
-        test_inputs = task_data['test']
+        test_inputs = task_data["test"]
 
         if not train_pairs:
             print(f"  Skipping task {task_id}: No training pairs.")
@@ -297,24 +321,22 @@ if __name__ == "__main__":
         else:
             # The magic happens here
             predicted_grids = train_and_predict_for_task(
-                task_id, 
-                train_pairs, 
-                test_inputs, 
-                device, 
-                HPARAMS
+                task_id, train_pairs, test_inputs, device, HPARAMS
             )
 
         # Format for submission.json
         formatted_predictions = []
         for grid in predicted_grids:
-            formatted_predictions.append({
-                "attempt_1": grid,
-                "attempt_2": grid # Use the same prediction for both attempts
-            })
+            formatted_predictions.append(
+                {
+                    "attempt_1": grid,
+                    "attempt_2": grid,  # Use the same prediction for both attempts
+                }
+            )
         submission[task_id] = formatted_predictions
 
     # Save final submission file
-    with open(SUBMISSION_FILE, 'w') as f:
+    with open(SUBMISSION_FILE, "w") as f:
         json.dump(submission, f)
 
     if VISUALISE:
@@ -322,8 +344,16 @@ if __name__ == "__main__":
         try:
             dataset_path = os.path.abspath(ARC_DATA_DIR)
             submission_path = os.path.abspath(SUBMISSION_FILE)
-            
-            cmd = [sys.executable, EVALUATE_SCRIPT_PATH, "--submission_file", submission_path, "--dataset", dataset_path, "--visualize"]
+
+            cmd = [
+                sys.executable,
+                EVALUATE_SCRIPT_PATH,
+                "--submission_file",
+                submission_path,
+                "--dataset",
+                dataset_path,
+                "--visualize",
+            ]
             print(f"Executing: {' '.join(cmd)}")
             subprocess.run(cmd, check=True)
             print("Visualization script finished.")
