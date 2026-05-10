@@ -2,7 +2,5 @@
 venv/
 nca-code/runs
 nca-code/archived/
-.cursor
-.cursorignore
 hidden/
 nca-code/__pycache__/
